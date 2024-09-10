@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Chat Privado</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        #auth-container, #app-container {
+            width: 100%;
+            max-width: 100%;
+            margin: 0;
+            background-color: white;
+            padding: 20px;
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        h1, h2 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 15px;
+        }
+        #chat-list, #chat-window {
+            width: 100%;
+            display: none;
+        }
+        #messages {
+            flex-grow: 1;
+            overflow-y: scroll;
+            padding: 10px;
+            background-color: #f9f9f9;
+            margin-bottom: 10px;
+            border-radius: 8px;
+        }
+        .message {
+            margin-bottom: 10px;
+            padding: 10px;
+            border-radius: 15px;
+            max-width: 80%;
+            word-wrap: break-word;
+        }
+        .sent {
+            background-color: #dcf8c6;
+            align-self: flex-end;
+            margin-left: auto;
+        }
+        .received {
+            background-color: #e5e5ea;
+            align-self: flex-start;
+        }
+        #message-form, #auth-form, #new-chat-form {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        input[type="text"], input[type="email"], input[type="password"] {
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 20px;
+            font-size: 16px;
+        }
+        button {
+            padding: 12px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .chat-item {
+            padding: 15px;
+            border-bottom: 1px solid #ddd;
+            cursor: pointer;
+        }
+        .chat-item:hover {
+            background-color: #f0f0f0;
+        }
+        #loading-indicator {
+            text-align: center;
+            color: #666;
+            margin-top: 10px;
+        }
+        .user-status {
+            font-size: 14px;
+            color: #666;
+            margin-top: 5px;
+        }
+        .timestamp {
+            font-size: 12px;
+            color: #999;
+            margin-top: 5px;
+        }
+        #user-search-results {
+            position: absolute;
+            background-color: white;
+            border: 1px solid #ddd;
+            border-top: none;
+            z-index: 1000;
+            max-height: 200px;
+            overflow-y: auto;
+            width: calc(100% - 40px);
+        }
+        .user-search-item {
+            padding: 12px;
+            cursor: pointer;
+        }
+        .user-search-item:hover {
+            background-color: #f0f0f0;
+        }
+        #back-to-chats {
+            margin-bottom: 10px;
+        }
+        @media (max-width: 600px) {
+            #app-container {
+                padding: 10px;
+            }
+            .message {
+                max-width: 90%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="auth-container">
+        <h1>Iniciar Sesión / Registrarse</h1>
+        <form id="auth-form">
+            <input type="email" id="email-input" placeholder="Correo electrónico" required>
+            <input type="text" id="username-input" placeholder="Nombre de usuario (@)" style="display:none;" required>
+            <input type="password" id="password-input" placeholder="Contraseña" required>
+            <button type="submit" id="login-button">Iniciar Sesión</button>
+        </form>
+        <button id="toggle-auth">Cambiar a Registro</button>
+    </div>
+
+    <div id="app-container" style="display:none;">
+        <button id="sign-out-button">Cerrar Sesión</button>
+        <div id="chat-list">
+            <h2>Chats</h2>
+            <div id="user-chats"></div>
+            <form id="new-chat-form">
+                <input type="text" id="new-chat-username" placeholder="Buscar usuario (@)" required>
+                <div id="user-search-results"></div>
+                <button type="submit">Nuevo Chat</button>
+            </form>
+        </div>
+        <div id="chat-window" style="display:none;">
+            <button id="back-to-chats">Volver a Chats</button>
+            <h2 id="chat-title">Selecciona un chat</h2>
+            <div id="user-status" class="user-status"></div>
+            <div id="messages"></div>
+            <form id="message-form">
+                <input type="text" id="message-input" placeholder="Escribe un mensaje..." required>
+                <button type="submit">Enviar</button>
+            </form>
+        </div>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+
+</body>
+</html>
+
+<script>
+    // Configuración de Firebase (reemplaza con tus propias credenciales)
+    const firebaseConfig = {
+        apiKey: "AIzaSyDqyy36AqP4kyMYu-JnluV6xx3xmtWro34",
+        authDomain: "chatsrar.firebaseapp.com",
+        projectId: "chatsrar",
+        storageBucket: "chatsrar.appspot.com",
+        messagingSenderId: "1048850198231",
+        appId: "1:1048850198231:web:d10fb157f0a28e3efbca92",
+        measurementId: "G-0PTTCYK42W"
+      };
+    // Inicializar Firebase
+    firebase.initializeApp(firebaseConfig);
+
+    // Referencias a elementos del DOM
+    const authContainer = document.getElementById('auth-container');
+    const appContainer = document.getElementById('app-container');
+    const authForm = document.getElementById('auth-form');
+    const emailInput = document.getElementById('email-input');
+    const usernameInput = document.getElementById('username-input');
+    const passwordInput = document.getElementById('password-input');
+    const loginButton = document.getElementById('login-button');
+    const toggleAuthButton = document.getElementById('toggle-auth');
+    const signOutButton = document.getElementById('sign-out-button');
+    const chatListDiv = document.getElementById('chat-list');
+    const userChatsDiv = document.getElementById('user-chats');
+    const newChatForm = document.getElementById('new-chat-form');
+    const newChatUsernameInput = document.getElementById('new-chat-username');
+    const userSearchResults = document.getElementById('user-search-results');
+    const chatWindow = document.getElementById('chat-window');
+    const backToChatsButton = document.getElementById('back-to-chats');
+    const chatTitle = document.getElementById('chat-title');
+    const userStatus = document.getElementById('user-status');
+    const messagesDiv = document.getElementById('messages');
+    const messageForm = document.getElementById('message-form');
+    const messageInput = document.getElementById('message-input');
+
+    let isLoginMode = true;
+    let currentUser = null;
+    let currentChatId = null;
+
+    // Función para mostrar la lista de chats
+    function showChatList() {
+        chatListDiv.style.display = 'block';
+        chatWindow.style.display = 'none';
+    }
+
+    // Función para mostrar la ventana de chat
+    function showChatWindow() {
+        chatListDiv.style.display = 'none';
+        chatWindow.style.display = 'block';
+    }
+
+    // Evento para volver a la lista de chats
+    backToChatsButton.addEventListener('click', showChatList);
+
+    // Cambiar entre inicio de sesión y registro
+    toggleAuthButton.addEventListener('click', () => {
+        isLoginMode = !isLoginMode;
+        loginButton.textContent = isLoginMode ? "Iniciar Sesión" : "Registrarse";
+        toggleAuthButton.textContent = isLoginMode ? "Cambiar a Registro" : "Cambiar a Inicio de Sesión";
+        usernameInput.style.display = isLoginMode ? "none" : "block";
+    });
+
+    // Manejar autenticación
+    authForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const email = emailInput.value;
+        const password = passwordInput.value;
+        const username = usernameInput.value;
+
+        if (isLoginMode) {
+            firebase.auth().signInWithEmailAndPassword(email, password)
+                .catch((error) => {
+                    console.error("Error de inicio de sesión:", error);
+                    alert("Error de inicio de sesión: " + error.message);
+                });
+        } else {
+            if (!username.startsWith('@')) {
+                alert("El nombre de usuario debe comenzar con @");
+                return;
+            }
+            firebase.auth().createUserWithEmailAndPassword(email, password)
+                .then((userCredential) => {
+                    return firebase.database().ref('users/' + userCredential.user.uid).set({
+                        email: email,
+                        username: username,
+                        lastOnline: firebase.database.ServerValue.TIMESTAMP
+                    });
+                })
+                .catch((error) => {
+                    console.error("Error de registro:", error);
+                    alert("Error de registro: " + error.message);
+                });
+        }
+    });
+
+    // Verificar el estado de autenticación
+    firebase.auth().onAuthStateChanged((user) => {
+        if (user) {
+            currentUser = user;
+            firebase.database().ref('users/' + user.uid).once('value', (snapshot) => {
+                currentUser.username = snapshot.val().username;
+                authContainer.style.display = 'none';
+                appContainer.style.display = 'flex';
+                showChatList();
+                loadUserChats();
+                updateOnlineStatus(true);
+            });
+        } else {
+            currentUser = null;
+            authContainer.style.display = 'block';
+            appContainer.style.display = 'none';
+            updateOnlineStatus(false);
+        }
+    });
+
+    // Actualizar estado en línea
+    function updateOnlineStatus(online) {
+        if (currentUser) {
+            const userStatusRef = firebase.database().ref('users/' + currentUser.uid);
+            if (online) {
+                userStatusRef.update({
+                    online: true,
+                    lastOnline: firebase.database.ServerValue.TIMESTAMP
+                });
+                userStatusRef.onDisconnect().update({
+                    online: false,
+                    lastOnline: firebase.database.ServerValue.TIMESTAMP
+                });
+            } else {
+                userStatusRef.update({
+                    online: false,
+                    lastOnline: firebase.database.ServerValue.TIMESTAMP
+                });
+            }
+        }
+    }
+
+    // Cargar chats del usuario
+    function loadUserChats() {
+        userChatsDiv.innerHTML = '';
+        const chatsRef = firebase.database().ref('user_chats/' + currentUser.uid);
+        chatsRef.on('child_added', (snapshot) => {
+            const chatId = snapshot.key;
+            const chatData = snapshot.val();
+            addChatToList(chatId, chatData.username);
+        });
+    }
+
+    // Añadir chat a la lista
+    function addChatToList(chatId, username) {
+        const chatItem = document.createElement('div');
+        chatItem.classList.add('chat-item');
+        chatItem.textContent = username;
+        chatItem.addEventListener('click', () => openChat(chatId, username));
+        userChatsDiv.appendChild(chatItem);
+    }
+
+    // Abrir chat
+    function openChat(chatId, username) {
+        currentChatId = chatId;
+        chatTitle.textContent = `Chat con ${username}`;
+        showChatWindow();
+        loadMessages(chatId);
+        updateUserStatus(username);
+    }
+
+    // Actualizar estado del usuario
+    function updateUserStatus(username) {
+        firebase.database().ref('users').orderByChild('username').equalTo(username).once('value', (snapshot) => {
+            const userData = snapshot.val();
+            if (userData) {
+                const userId = Object.keys(userData)[0];
+                const user = userData[userId];
+                userStatus.textContent = user.online ? 'En línea' : `Última vez: ${new Date(user.lastOnline).toLocaleString()}`;
+            }
+        });
+    }
+
+    // Cargar mensajes
+    function loadMessages(chatId) {
+        messagesDiv.innerHTML = '';
+        const messagesRef = firebase.database().ref('chats/' + chatId + '/messages');
+        messagesRef.on('child_added', (snapshot) => {
+            const message = snapshot.val();
+            displayMessage(message);
+        });
+    }
+
+    // Mostrar mensaje
+    function displayMessage(message) {
+        const messageElement = document.createElement('div');
+        messageElement.classList.add('message');
+        messageElement.classList.add(message.senderId === currentUser.uid ? 'sent' : 'received');
+        
+        const textElement = document.createElement('p');
+        textElement.textContent = message.text;
+        messageElement.appendChild(textElement);
+
+        const timeElement = document.createElement('small');
+        timeElement.textContent = new Date(message.timestamp).toLocaleString();
+        timeElement.classList.add('timestamp');
+        messageElement.appendChild(timeElement);
+
+        messagesDiv.appendChild(messageElement);
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+
+    // Enviar mensaje
+    messageForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const text = messageInput.value.trim();
+        if (text && currentChatId) {
+            const message = {
+                text: text,
+                senderId: currentUser.uid,
+                timestamp: firebase.database.ServerValue.TIMESTAMP
+            };
+            firebase.database().ref('chats/' + currentChatId + '/messages').push(message);
+            messageInput.value = '';
+        }
+    });
+
+    // Búsqueda de usuarios
+    newChatUsernameInput.addEventListener('input', debounce(searchUsers, 300));
+
+    function debounce(func, delay) {
+        let debounceTimer;
+        return function() {
+            const context = this;
+            const args = arguments;
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => func.apply(context, args), delay);
+        }
+    }
+
+    function searchUsers() {
+        const searchTerm = newChatUsernameInput.value.trim();
+        if (searchTerm.length < 2 || !searchTerm.startsWith('@')) {
+            userSearchResults.innerHTML = '';
+            return;
+        }
+
+        const usersRef = firebase.database().ref('users');
+        usersRef.orderByChild('username').startAt(searchTerm).endAt(searchTerm + "\uf8ff").limitToFirst(5).once('value', (snapshot) => {
+            userSearchResults.innerHTML = '';
+            snapshot.forEach((childSnapshot) => {
+                const userData = childSnapshot.val();
+                if (userData.username !== currentUser.username) {
+                    const div = document.createElement('div');
+                    div.textContent = userData.username;
+                    div.classList.add('user-search-item');
+                    div.addEventListener('click', () => {
+                        newChatUsernameInput.value = userData.username;
+                        userSearchResults.innerHTML = '';
+                    });
+                    userSearchResults.appendChild(div);
+                }
+            });
+        });
+    }
+
+    // Crear nuevo chat
+    newChatForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const username = newChatUsernameInput.value.trim();
+        if (username && username !== currentUser.username) {
+            createNewChat(username);
+        } else {
+            alert('Por favor, ingresa un nombre de usuario válido diferente al tuyo.');
+        }
+    });
+
+    // Función para crear un nuevo chat
+    function createNewChat(username) {
+        if (!firebase.auth().currentUser) {
+            console.error("Usuario no autenticado");
+            alert("Por favor, inicia sesión para crear un chat.");
+            return;
+        }
+
+        console.log('Intentando crear chat con:', username);
+
+        // Mostrar indicador de carga
+        const loadingIndicator = document.createElement('div');
+        loadingIndicator.id = 'loading-indicator';
+        loadingIndicator.textContent = 'Creando chat...';
+        newChatForm.appendChild(loadingIndicator);
+
+        // Buscar al usuario por nombre de usuario
+        firebase.database().ref('users').orderByChild('username').equalTo(username).once('value')
+            .then((snapshot) => {
+                console.log('Resultado de la búsqueda del usuario:', snapshot.val());
+                if (snapshot.exists()) {
+                    const userData = snapshot.val();
+                    const otherUserId = Object.keys(userData)[0];
+                    const chatId = [currentUser.uid, otherUserId].sort().join('_');
+
+                    console.log('Verificando si el chat ya existe:', chatId);
+                    return firebase.database().ref(`user_chats/${currentUser.uid}/${chatId}`).once('value')
+                        .then((chatSnapshot) => {
+                            if (chatSnapshot.exists()) {
+                                console.log('El chat ya existe');
+                                throw new Error('Ya existe un chat con este usuario.');
+                            }
+                            
+                            console.log('Creando entradas para el chat:', chatId);
+                            const updates = {};
+                            updates[`user_chats/${currentUser.uid}/${chatId}`] = { username: username };
+                            updates[`user_chats/${otherUserId}/${chatId}`] = { username: currentUser.username };
+                            updates[`chats/${chatId}`] = { created: firebase.database.ServerValue.TIMESTAMP };
+
+                            return firebase.database().ref().update(updates);
+                        });
+                } else {
+                    console.log('No se encontró el usuario');
+                    throw new Error('No se encontró ningún usuario con ese nombre de usuario.');
+                }
+            })
+            .then(() => {
+                console.log('Chat creado exitosamente');
+                alert('Chat creado exitosamente');
+                newChatUsernameInput.value = '';
+                loadUserChats();
+            })
+            .catch((error) => {
+                console.error("Error al crear el chat:", error);
+                alert("Error al crear el chat: " + error.message);
+            })
+            .finally(() => {
+                const loadingIndicator = document.getElementById('loading-indicator');
+                if (loadingIndicator) {
+                    loadingIndicator.remove();
+                }
+            });
+    }
+
+    // Función para cerrar sesión
+    function signOut() {
+        firebase.auth().signOut().then(() => {
+            console.log('Sesión cerrada exitosamente');
+            currentUser = null;
+            currentChatId = null;
+            authContainer.style.display = 'block';
+            appContainer.style.display = 'none';
+            userChatsDiv.innerHTML = '';
+            messagesDiv.innerHTML = '';
+            showChatList();
+        }).catch((error) => {
+            console.error('Error al cerrar sesión:', error);
+        });
+    }
+
+    // Agregar evento de cierre de sesión al botón
+    signOutButton.addEventListener('click', signOut);
+</script>
